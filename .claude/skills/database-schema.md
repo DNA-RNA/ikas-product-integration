@@ -8,23 +8,31 @@
 ### 1. `companies` — Site/Firma Kayıtları
 ```sql
 CREATE TABLE [dbo].[companies] (
-    [id]            BIGINT PRIMARY KEY IDENTITY(1,1),
-    [name]          NVARCHAR(255) NOT NULL,
-    [email]         NVARCHAR(255),
-    [website_url]   NVARCHAR(500),
-    [is_active]     BIT NOT NULL DEFAULT 1,
-    [created_date]  DATETIME NOT NULL DEFAULT GETDATE()
+    [id]                BIGINT PRIMARY KEY IDENTITY(1,1),
+    [name]              NVARCHAR(255) NOT NULL,
+    [email]             NVARCHAR(255),
+    [website_url]       NVARCHAR(500),
+    
+    -- İkas API Credentials (production'da encrypted)
+    [ikas_api_key]      NVARCHAR(500) NULL,     -- Hedef mağaza İkas credentials
+    [ikas_api_secret]   NVARCHAR(500) NULL,    -- null = aktif olmayan site
+    [language_code]     NVARCHAR(10) NULL,     -- 'tr', 'en' — mallofmolds için 'en'
+    
+    -- Status
+    [is_active]         BIT NOT NULL DEFAULT 1,
+    [created_date]      DATETIME NOT NULL DEFAULT GETDATE(),
+    [updated_date]      DATETIME NULL
 );
 ```
 
 Seed data:
 ```sql
-INSERT INTO companies (name, website_url) VALUES
-    ('hobizubi.com', 'https://hobizubi.com'),
-    ('recinem.com', 'https://recinem.com'),
-    ('boncukpasaji.com', 'https://boncukpasaji.com'),
-    ('kalipatolyesi.com', 'https://kalipatolyesi.com'),
-    ('mallofmolds.com', 'https://mallofmolds.com');
+INSERT INTO companies (name, website_url, language_code, is_active) VALUES
+    ('hobizubi.com', 'https://hobizubi.com', 'tr', 1),
+    ('recinem.com', 'https://recinem.com', 'tr', 1),
+    ('boncukpasaji.com', 'https://boncukpasaji.com', 'tr', 1),
+    ('kalipatolyesi.com', 'https://kalipatolyesi.com', 'tr', 1),
+    ('mallofmolds.com', 'https://mallofmolds.com', 'en', 1);
 ```
 
 ### 2. `xml_sources` — Master Mağaza XML Kaynakları
@@ -50,10 +58,10 @@ CREATE INDEX IX_XmlSources_SourceCompany ON [xml_sources]([source_company_id]);
 CREATE INDEX IX_XmlSources_NextSync ON [xml_sources]([next_sync_date]) WHERE [is_active] = 1;
 ```
 
-### 3. `site_mappings` — Hedef Mağaza Konfigürasyonu
+### 3. `site_mappings` — XML Source → Target Company Mapping + Filtre/Fiyat
 
-> **KRITIK:** Buradaki `ikas_api_key` ve `ikas_api_secret` builders.ikas.com'dan alınır.
-> Production'da bu alanlar şifreli saklanır (DPAPI/AES + key from KeyVault).
+> **Yapı:** Her XML source'dan her target company'e ürün göndermek için mapping ve filtering/pricing rules tutar.
+> İkas API Credentials artık **companies** tablosunda saklanır (hedef company'ye ait).
 
 ```sql
 CREATE TABLE [dbo].[site_mappings] (
@@ -61,24 +69,19 @@ CREATE TABLE [dbo].[site_mappings] (
     [xml_source_id]             BIGINT NOT NULL,
     [target_company_id]         BIGINT NOT NULL,
 
-    -- İkas API Credentials (encrypted in production)
-    [ikas_api_key]              NVARCHAR(500) NOT NULL,
-    [ikas_api_secret]           NVARCHAR(500) NOT NULL,
-
-    -- Pricing Rules
+    -- Pricing Rules (target company özelinde)
     [price_margin_percentage]   DECIMAL(18,2) NOT NULL DEFAULT 0,
     [additional_price]          DECIMAL(18,2) NOT NULL DEFAULT 0,
     [currency_override]         NVARCHAR(10) NULL,   -- null = master'dan gelen kullanılır
 
     -- Filters & Mappings (JSON)
     [category_filters]          NVARCHAR(MAX) NULL,  -- JSON: ["Reçine", "Boncuk > *"]
-    [category_mappings]         NVARCHAR(MAX) NULL,  -- JSON: {"Hobi > Reçine > Epoksi": "Resin"}
+    [category_mappings]         NVARCHAR(MAX) NULL,  -- JSON: {"Hobi > Reçine": "Resin"}
     [brand_mappings]            NVARCHAR(MAX) NULL,  -- JSON: {"EpoxyPro": "EpoxyPro EN"}
 
     -- Behavior
     [deactivate_zero_stock]     BIT NOT NULL DEFAULT 1,
     [send_images]               BIT NOT NULL DEFAULT 1,
-    [language_override]         NVARCHAR(10) NULL,   -- 'en', 'tr' — mallofmolds için 'en'
 
     -- Schedule (per-mapping, opsiyonel; null ise global default)
     [sync_cron]                 NVARCHAR(50) NULL,   -- '30 2 * * *'
@@ -101,10 +104,15 @@ CREATE INDEX IX_SiteMapping_Active ON [site_mappings]([is_active]) WHERE [is_act
 ```
 
 ### 4. `products` — Master XML'den Parse Edilmiş Ürünler
+
+> **Yapı:** Her ürün master company (hobizubi.com) tarafından XML üzerinden gelmektedir.
+> İlişki: company (master) → xml_sources → products (1 source → N product).
+> SKU unique constraint: `(xml_source_id, sku)` — aynı SKU'yu iki kere gelmesi = update.
+
 ```sql
 CREATE TABLE [dbo].[products] (
     [id]                BIGINT PRIMARY KEY IDENTITY(1,1),
-    [company_id]        BIGINT NOT NULL,    -- master mağaza id (hobizubi.com)
+    [company_id]        BIGINT NOT NULL,    -- master mağaza (hobizubi.com)
     [xml_source_id]     BIGINT NOT NULL,
     [external_id]       NVARCHAR(100) NULL, -- master mağaza internal id
 
@@ -130,8 +138,9 @@ CREATE TABLE [dbo].[products] (
     [images_json]       NVARCHAR(MAX) NULL, -- JSON array of URLs
     [attributes_json]   NVARCHAR(MAX) NULL, -- JSON object {name: value}
 
-    -- Status
-    [is_active]         BIT NOT NULL DEFAULT 1,
+    -- Status & Lifecycle
+    [is_active]         BIT NOT NULL DEFAULT 1,    -- aktif ürün
+    [is_deleted]        BIT NOT NULL DEFAULT 0,    -- master'da silindi (soft delete)
     [created_date]      DATETIME NOT NULL DEFAULT GETDATE(),
     [updated_date]      DATETIME NULL,
     [last_seen_date]    DATETIME NOT NULL DEFAULT GETDATE(), -- son XML'de görüldüğü tarih
@@ -147,6 +156,7 @@ CREATE INDEX IX_Products_Sku ON [products]([sku]);
 CREATE INDEX IX_Products_Company ON [products]([company_id]);
 CREATE INDEX IX_Products_XmlSource ON [products]([xml_source_id]);
 CREATE INDEX IX_Products_Category ON [products]([category_path]);
+CREATE INDEX IX_Products_IsDeleted ON [products]([is_deleted]) WHERE [is_deleted] = 1;
 ```
 
 ### 5. `product_transfers` — Hangi Ürün Hangi Hedefe
