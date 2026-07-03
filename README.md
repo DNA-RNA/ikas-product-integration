@@ -1,4 +1,4 @@
-# 🔄 Multi-Store Product Synchronization Platform
+# 🔄 Multi-Store Product Synchronization Platform AI Agent-Assisted
 
 > **Status:** 🚧 Currently under active development
 
