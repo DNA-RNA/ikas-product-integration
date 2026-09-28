@@ -1,7 +1,9 @@
+using Hangfire;
 using Microsoft.AspNetCore.Mvc;
 using MultiSiteIkas.Core.Ikas;
 using MultiSiteIkas.Core.Interfaces;
 using MultiSiteIkas.Data.Interfaces;
+using MultiSiteIkas.Jobs;
 
 namespace MultiSiteIkas.API.Controllers;
 
@@ -16,6 +18,7 @@ public class TestController : ControllerBase
     private readonly IProductRepository _products;
     private readonly ICompanyRepository _companies;
     private readonly IIkasApiService _ikasApi;
+    private readonly IBackgroundJobClient _jobs;
 
     public TestController(
         IXmlPullService xmlPull,
@@ -24,7 +27,8 @@ public class TestController : ControllerBase
         ISiteMappingRepository siteMappings,
         IProductRepository products,
         ICompanyRepository companies,
-        IIkasApiService ikasApi)
+        IIkasApiService ikasApi,
+        IBackgroundJobClient jobs)
     {
         _xmlPull = xmlPull;
         _transfer = transfer;
@@ -33,6 +37,7 @@ public class TestController : ControllerBase
         _products = products;
         _companies = companies;
         _ikasApi = ikasApi;
+        _jobs = jobs;
     }
 
     /// <summary>
@@ -218,5 +223,51 @@ public class TestController : ControllerBase
             count = categories.Count,
             categories = categories.Select(c => new { c.Id, c.Name, c.ParentId })
         });
+    }
+
+    // ── Hangfire Job Tetikleme ─────────────────────────────────────────────────
+
+    /// <summary>
+    /// Hangfire kuyruğuna xml-pull job atar (servis direkt çağırmaz).
+    /// POST /api/test/jobs/xml-pull/1
+    /// </summary>
+    [HttpPost("jobs/xml-pull/{xmlSourceId:long}")]
+    public IActionResult EnqueueXmlPull(long xmlSourceId)
+    {
+        var jobId = _jobs.Enqueue<XmlPullJob>(j => j.ExecuteAsync(xmlSourceId, CancellationToken.None));
+        return Ok(new { jobId, message = $"XmlPull job kuyruğa alındı — /hangfire'dan takip et" });
+    }
+
+    /// <summary>
+    /// Hangfire kuyruğuna transfer job atar.
+    /// POST /api/test/jobs/transfer/1
+    /// </summary>
+    [HttpPost("jobs/transfer/{siteMappingId:long}")]
+    public IActionResult EnqueueTransfer(long siteMappingId)
+    {
+        var jobId = _jobs.Enqueue<TransferJob>(j => j.ExecuteAsync(siteMappingId, CancellationToken.None));
+        return Ok(new { jobId, message = $"Transfer job kuyruğa alındı — /hangfire'dan takip et" });
+    }
+
+    /// <summary>
+    /// Tüm aktif XML kaynakları için pull job'larını kuyruğa atar.
+    /// POST /api/test/jobs/xml-pull-all
+    /// </summary>
+    [HttpPost("jobs/xml-pull-all")]
+    public IActionResult EnqueueXmlPullAll()
+    {
+        var jobId = _jobs.Enqueue<OrchestratorJob>(j => j.RunXmlPullAllAsync(CancellationToken.None));
+        return Ok(new { jobId, message = "OrchestratorJob (xml-pull-all) kuyruğa alındı — /hangfire'dan takip et" });
+    }
+
+    /// <summary>
+    /// Tüm aktif mapping'ler için transfer job'larını kuyruğa atar.
+    /// POST /api/test/jobs/transfer-all
+    /// </summary>
+    [HttpPost("jobs/transfer-all")]
+    public IActionResult EnqueueTransferAll()
+    {
+        var jobId = _jobs.Enqueue<OrchestratorJob>(j => j.RunTransferAllAsync(CancellationToken.None));
+        return Ok(new { jobId, message = "OrchestratorJob (transfer-all) kuyruğa alındı — /hangfire'dan takip et" });
     }
 }

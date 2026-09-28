@@ -1,4 +1,6 @@
 using Dapper;
+using Hangfire;
+using Hangfire.PostgreSql;
 using Serilog;
 using MultiSiteIkas.Core.Ikas;
 using MultiSiteIkas.Core.Interfaces;
@@ -25,9 +27,7 @@ var connectionString = config.GetConnectionString("DefaultConnection")
     ?? throw new InvalidOperationException("Connection string 'DefaultConnection' not found.");
 
 // ── Data layer ──────────────────────────────────────────────────────────────
-builder.Services.AddSingleton<IDbConnectionFactory>(
-    new PostgresConnectionFactory(connectionString));
-
+builder.Services.AddSingleton<IDbConnectionFactory>(new PostgresConnectionFactory(connectionString));
 builder.Services.AddScoped<ICompanyRepository, CompanyRepository>();
 builder.Services.AddScoped<IXmlSourceRepository, XmlSourceRepository>();
 builder.Services.AddScoped<ISiteMappingRepository, SiteMappingRepository>();
@@ -42,20 +42,25 @@ builder.Services.AddScoped<IIkasFieldMapper, IkasFieldMapper>();
 builder.Services.AddScoped<ICategoryResolver, CategoryResolver>();
 builder.Services.AddScoped<ITransferService, TransferService>();
 
-// ── İkas HTTP client ────────────────────────────────────────────────────────
+// ── HTTP clients ────────────────────────────────────────────────────────────
 builder.Services.AddHttpClient<IIkasApiService, IkasApiService>(client =>
 {
     client.BaseAddress = new Uri("https://api.myikas.com");
     client.Timeout = TimeSpan.FromSeconds(30);
 });
 
-// ── XML parser + pull ───────────────────────────────────────────────────────
-builder.Services.AddScoped<MultiSiteIkas.Core.Interfaces.IXmlParsingService, MultiSiteIkas.Core.Xml.XmlParsingService>();
-builder.Services.AddScoped<MultiSiteIkas.Core.Interfaces.IXmlPullService, MultiSiteIkas.Core.Xml.XmlPullService>();
-builder.Services.AddHttpClient("XmlDownloader", client =>
-{
-    client.Timeout = TimeSpan.FromMinutes(5);
-});
+builder.Services.AddScoped<IXmlParsingService, MultiSiteIkas.Core.Xml.XmlParsingService>();
+builder.Services.AddScoped<IXmlPullService, MultiSiteIkas.Core.Xml.XmlPullService>();
+builder.Services.AddHttpClient("XmlDownloader", client => { client.Timeout = TimeSpan.FromMinutes(5); });
+
+// ── Hangfire CLIENT (sadece job kuyruğa atmak için — server Worker'da) ──────
+// AddHangfire storage'ı tanıtır; IBackgroundJobClient artık inject edilebilir
+// AddHangfireServer ÇAĞRILMIYOR — job'ları Worker çalıştıracak
+builder.Services.AddHangfire(cfg => cfg
+    .SetDataCompatibilityLevel(CompatibilityLevel.Version_180)
+    .UseSimpleAssemblyNameTypeSerializer()
+    .UseRecommendedSerializerSettings()
+    .UsePostgreSqlStorage(c => c.UseNpgsqlConnection(connectionString)));
 
 // ── API ─────────────────────────────────────────────────────────────────────
 builder.Services.AddControllers();
@@ -74,7 +79,7 @@ app.UseHttpsRedirection();
 app.UseAuthorization();
 app.MapControllers();
 app.MapGet("/", () => "Multi-Site İkas Product Integration API v1.0");
-app.MapGet("/health", () => Results.Ok(new { status = "healthy", timestamp = DateTime.UtcNow }));
+app.MapGet("/health", () => Results.Ok(new { status = "healthy", service = "api", timestamp = DateTime.UtcNow }));
 
 try
 {

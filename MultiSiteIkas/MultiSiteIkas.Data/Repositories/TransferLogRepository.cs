@@ -5,46 +5,55 @@ using MultiSiteIkas.Data.Interfaces;
 
 namespace MultiSiteIkas.Data.Repositories;
 
-public sealed class TransferLogRepository : ITransferLogRepository
+public sealed class TransferLogRepository(IDbConnectionFactory factory) : ITransferLogRepository
 {
-    private readonly IDbConnectionFactory _factory;
-
-    public TransferLogRepository(IDbConnectionFactory factory) => _factory = factory;
-
     public async Task<TransferLog?> GetByIdAsync(long id, CancellationToken ct = default)
     {
-        using var conn = _factory.CreateConnection();
+        using var conn = factory.CreateConnection();
         return await conn.QuerySingleOrDefaultAsync<TransferLog>(
             "SELECT * FROM transfer_logs WHERE id = @id", new { id });
     }
 
-    public async Task<IEnumerable<TransferLog>> GetByXmlSourceIdAsync(long xmlSourceId, int take = 50, CancellationToken ct = default)
+    public async Task<(IEnumerable<TransferLog> Items, long TotalCount)> GetPagedAsync(
+        int page, int pageSize, long? siteMappingId = null, long? xmlSourceId = null,
+        byte? status = null, string? sortField = null, string? sortDir = null, CancellationToken ct = default)
     {
-        using var conn = _factory.CreateConnection();
-        return await conn.QueryAsync<TransferLog>(
-            "SELECT * FROM transfer_logs WHERE xml_source_id = @xmlSourceId ORDER BY start_date DESC LIMIT @take",
-            new { xmlSourceId, take });
-    }
+        if (page < 1) page = 1;
+        if (pageSize <= 0) pageSize = 20;
+        var offset = (page - 1) * pageSize;
 
-    public async Task<IEnumerable<TransferLog>> GetBySiteMappingIdAsync(long siteMappingId, int take = 50, CancellationToken ct = default)
-    {
-        using var conn = _factory.CreateConnection();
-        return await conn.QueryAsync<TransferLog>(
-            "SELECT * FROM transfer_logs WHERE site_mapping_id = @siteMappingId ORDER BY start_date DESC LIMIT @take",
-            new { siteMappingId, take });
-    }
+        string orderColumn = sortField?.ToLower() switch
+        {
+            "startdate"    => "start_date",
+            "enddate"      => "end_date",
+            "durationms"   => "duration_ms",
+            "successcount" => "success_count",
+            "failedcount"  => "failed_count",
+            "status"       => "status",
+            _              => "start_date"
+        };
+        string direction = sortDir?.ToLower() == "asc" ? "ASC" : "DESC";
 
-    public async Task<IEnumerable<TransferLog>> GetByJobTypeAsync(string jobType, int take = 100, CancellationToken ct = default)
-    {
-        using var conn = _factory.CreateConnection();
-        return await conn.QueryAsync<TransferLog>(
-            "SELECT * FROM transfer_logs WHERE job_type = @jobType ORDER BY start_date DESC LIMIT @take",
-            new { jobType, take });
+        var where = "1=1";
+        if (siteMappingId.HasValue) where += " AND site_mapping_id = @siteMappingId";
+        if (xmlSourceId.HasValue)   where += " AND xml_source_id = @xmlSourceId";
+        if (status.HasValue)        where += " AND status = @status";
+
+        using var conn = factory.CreateConnection();
+        var multi = await conn.QueryMultipleAsync($"""
+            SELECT COUNT(*) FROM transfer_logs WHERE {where};
+            SELECT * FROM transfer_logs WHERE {where} ORDER BY {orderColumn} {direction} LIMIT @pageSize OFFSET @offset
+            """, new { siteMappingId, xmlSourceId, status, pageSize, offset });
+
+        var total = await multi.ReadSingleAsync<long>();
+        var items = (await multi.ReadAsync<TransferLog>()).ToList();
+
+        return (items, total);
     }
 
     public async Task<IEnumerable<TransferLog>> GetRecentFailuresAsync(int take = 50, CancellationToken ct = default)
     {
-        using var conn = _factory.CreateConnection();
+        using var conn = factory.CreateConnection();
         return await conn.QueryAsync<TransferLog>(
             "SELECT * FROM transfer_logs WHERE status = 2 ORDER BY start_date DESC LIMIT @take",
             new { take });
@@ -61,7 +70,7 @@ public sealed class TransferLogRepository : ITransferLogRepository
                  @StartDate, @Status, NOW())
             RETURNING id
             """;
-        using var conn = _factory.CreateConnection();
+        using var conn = factory.CreateConnection();
         return await conn.ExecuteScalarAsync<long>(sql, log);
     }
 
@@ -81,13 +90,13 @@ public sealed class TransferLogRepository : ITransferLogRepository
                 detail_json              = @DetailJson
             WHERE id = @Id
             """;
-        using var conn = _factory.CreateConnection();
+        using var conn = factory.CreateConnection();
         return await conn.ExecuteAsync(sql, log) > 0;
     }
 
     public async Task<bool> UpdateStatusAsync(long id, byte status, long? durationMs, string? errorMessage = null, CancellationToken ct = default)
     {
-        using var conn = _factory.CreateConnection();
+        using var conn = factory.CreateConnection();
         return await conn.ExecuteAsync(
             "UPDATE transfer_logs SET status = @status, end_date = NOW(), duration_ms = @durationMs, error_message = @errorMessage WHERE id = @id",
             new { id, status, durationMs, errorMessage }) > 0;
@@ -95,8 +104,7 @@ public sealed class TransferLogRepository : ITransferLogRepository
 
     public async Task<bool> DeleteAsync(long id, CancellationToken ct = default)
     {
-        using var conn = _factory.CreateConnection();
-        return await conn.ExecuteAsync(
-            "DELETE FROM transfer_logs WHERE id = @id", new { id }) > 0;
+        using var conn = factory.CreateConnection();
+        return await conn.ExecuteAsync("DELETE FROM transfer_logs WHERE id = @id", new { id }) > 0;
     }
 }
