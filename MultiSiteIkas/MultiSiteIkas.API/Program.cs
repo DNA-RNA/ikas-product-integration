@@ -2,6 +2,7 @@ using Dapper;
 using Hangfire;
 using Hangfire.PostgreSql;
 using Serilog;
+using MultiSiteIkas.Core.Caching;
 using MultiSiteIkas.Core.Ikas;
 using MultiSiteIkas.Core.Interfaces;
 using MultiSiteIkas.Core.Services;
@@ -25,6 +26,11 @@ builder.Host.UseSerilog();
 
 var connectionString = config.GetConnectionString("DefaultConnection")
     ?? throw new InvalidOperationException("Connection string 'DefaultConnection' not found.");
+
+// ── Cache (IMemoryCache → MemoryCacheService → ICacheService) ───────────────
+// Redis version: AddStackExchangeRedisCache + RedisDistributedCacheService
+builder.Services.AddMemoryCache();
+builder.Services.AddSingleton<ICacheService, MemoryCacheService>();
 
 // ── Data layer ──────────────────────────────────────────────────────────────
 builder.Services.AddSingleton<IDbConnectionFactory>(new PostgresConnectionFactory(connectionString));

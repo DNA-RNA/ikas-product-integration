@@ -2,6 +2,7 @@ using Dapper;
 using Hangfire;
 using Hangfire.PostgreSql;
 using Serilog;
+using MultiSiteIkas.Core.Caching;
 using MultiSiteIkas.Worker.Infrastructure;
 using MultiSiteIkas.Core.Ikas;
 using MultiSiteIkas.Core.Interfaces;
@@ -28,6 +29,10 @@ builder.Host.UseSerilog();
 
 var connectionString = config.GetConnectionString("DefaultConnection")
     ?? throw new InvalidOperationException("Connection string 'DefaultConnection' not found.");
+
+// ── Cache ─────────────────────────────────────────────────────────────────────
+builder.Services.AddMemoryCache();
+builder.Services.AddSingleton<ICacheService, MemoryCacheService>();
 
 // ── Data layer ────────────────────────────────────────────────────────────────
 // Job'lar DB'ye yazar: ürün transferi, log kaydı vb. — repository'lerin tümü gerekli

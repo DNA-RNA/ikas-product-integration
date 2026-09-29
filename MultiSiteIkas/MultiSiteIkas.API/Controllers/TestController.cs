@@ -92,8 +92,8 @@ public class TestController : ControllerBase
     [HttpGet("xml-sources")]
     public async Task<IActionResult> GetXmlSources(CancellationToken ct)
     {
-        var list = await _xmlSources.GetAllAsync(ct);
-        return Ok(list);
+        var (items, _) = await _xmlSources.GetPagedAsync(1, 100, ct: ct);
+        return Ok(items);
     }
 
     /// <summary>
