@@ -1,3 +1,37 @@
-* .dll
-bin
-obj
+# .NET
+bin/
+obj/
+*.user
+*.suo
+.vs/
+*.lock.json
+
+# Logs
+logs/
+*.log
+
+# Environment / Secrets
+.env
+*.env.local
+appsettings.Development.json
+appsettings.*.local.json
+
+# Build outputs
+publish/
+dist/
+
+# macOS
+.DS_Store
+
+# JetBrains
+.idea/
+*.iml
+
+# VS Code
+.vscode/
+!.vscode/extensions.json
+
+# Node (Next.js frontend - ilerisi için)
+node_modules/
+.next/
+out/

@@ -1,0 +1,61 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: multisite_db
+    environment:
+      POSTGRES_DB:       ${POSTGRES_DB:-multisite_ikas}
+      POSTGRES_USER:     ${POSTGRES_USER:-ikas}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./docs/migrations:/docker-entrypoint-initdb.d:ro
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-ikas} -d ${POSTGRES_DB:-multisite_ikas}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  api:
+    build:
+      context: ./MultiSiteIkas
+      dockerfile: MultiSiteIkas.API/Dockerfile
+    container_name: multisite_api
+    environment:
+      ASPNETCORE_ENVIRONMENT: ${ASPNETCORE_ENVIRONMENT:-Production}
+      ConnectionStrings__DefaultConnection: "Host=postgres;Port=5432;Database=${POSTGRES_DB:-multisite_ikas};Username=${POSTGRES_USER:-ikas};Password=${POSTGRES_PASSWORD}"
+      Jwt__Secret:          ${JWT_SECRET}
+      Jwt__Issuer:          multisite-ikas
+      Jwt__Audience:        multisite-ikas-client
+      Jwt__ExpiryHours:     8
+      Cors__AllowedOrigins__0: ${CORS_ORIGIN:-http://localhost:3000}
+      Seed__AdminUsername:  ${ADMIN_USERNAME:-admin}
+      Seed__AdminPassword:  ${ADMIN_PASSWORD}
+    ports:
+      - "${API_PORT:-5155}:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+  worker:
+    build:
+      context: ./MultiSiteIkas
+      dockerfile: MultiSiteIkas.Worker/Dockerfile
+    container_name: multisite_worker
+    environment:
+      ConnectionStrings__DefaultConnection: "Host=postgres;Port=5432;Database=${POSTGRES_DB:-multisite_ikas};Username=${POSTGRES_USER:-ikas};Password=${POSTGRES_PASSWORD}"
+      Hangfire__DashboardUser:     ${HANGFIRE_USER:-admin}
+      Hangfire__DashboardPassword: ${HANGFIRE_PASSWORD}
+      Hangfire__WorkerCount:       5
+    ports:
+      - "${WORKER_PORT:-5156}:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
