@@ -56,6 +56,46 @@ public sealed class ProductRepository : IProductRepository
             "SELECT * FROM products WHERE is_active = FALSE OR is_deleted = TRUE");
     }
 
+    public async Task<(IEnumerable<Product> Items, long TotalCount)> GetPagedAsync(
+        int page, int pageSize, long? xmlSourceId = null, long? companyId = null,
+        string? search = null, bool? isActive = null,
+        string? sortField = null, string? sortDir = null, CancellationToken ct = default)
+    {
+        if (page < 1) page = 1;
+        if (pageSize <= 0) pageSize = 20;
+        var offset = (page - 1) * pageSize;
+
+        string orderColumn = sortField?.ToLower() switch
+        {
+            "name"          => "name",
+            "saleprice"     => "sale_price",
+            "stockquantity" => "stock_quantity",
+            "categorypath"  => "category_path",
+            "lastseendate"  => "last_seen_date",
+            _               => "name"
+        };
+        string direction = sortDir?.ToLower() == "desc" ? "DESC" : "ASC";
+
+        var where = "is_deleted = FALSE";
+        if (xmlSourceId.HasValue) where += " AND xml_source_id = @xmlSourceId";
+        if (companyId.HasValue)   where += " AND company_id = @companyId";
+        if (isActive.HasValue)    where += " AND is_active = @isActive";
+        if (!string.IsNullOrWhiteSpace(search))
+            where += " AND (name ILIKE @searchLike OR sku ILIKE @searchLike OR category_path ILIKE @searchLike)";
+
+        var searchLike = string.IsNullOrWhiteSpace(search) ? null : $"%{search}%";
+
+        using var conn = _factory.CreateConnection();
+        var multi = await conn.QueryMultipleAsync($"""
+            SELECT COUNT(*) FROM products WHERE {where};
+            SELECT * FROM products WHERE {where} ORDER BY {orderColumn} {direction} LIMIT @pageSize OFFSET @offset
+            """, new { xmlSourceId, companyId, isActive, searchLike, pageSize, offset });
+
+        var total = await multi.ReadSingleAsync<long>();
+        var items = (await multi.ReadAsync<Product>()).ToList();
+        return (items, total);
+    }
+
     public async Task<long> UpsertAsync(Product product, CancellationToken ct = default)
     {
         const string sql = """

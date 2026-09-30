@@ -1,4 +1,5 @@
 using Hangfire;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using MultiSiteIkas.API.Models.Requests;
 using MultiSiteIkas.API.Models.Responses;
@@ -10,6 +11,7 @@ namespace MultiSiteIkas.API.Controllers;
 
 [ApiController]
 [Route("api/site-mappings")]
+[Authorize(Roles = "admin")]
 public class SiteMappingsController(
     ISiteMappingRepository repo,
     IBackgroundJobClient jobs) : ControllerBase

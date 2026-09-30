@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using MultiSiteIkas.API.Models.Responses;
 using MultiSiteIkas.Data.Interfaces;
@@ -6,6 +7,7 @@ namespace MultiSiteIkas.API.Controllers;
 
 [ApiController]
 [Route("api/transfer-logs")]
+[Authorize]
 public class TransferLogsController(ITransferLogRepository repo) : ControllerBase
 {
     [HttpGet]
@@ -14,13 +16,18 @@ public class TransferLogsController(ITransferLogRepository repo) : ControllerBas
         [FromQuery] int pageSize = 20,
         [FromQuery] long? siteMappingId = null,
         [FromQuery] long? xmlSourceId = null,
+        [FromQuery] long? targetCompanyId = null,
         [FromQuery] byte? status = null,        // 0=Pending 1=Success 2=Failed
         [FromQuery] string? sortField = null,
         [FromQuery] string? sortDir = null,
         CancellationToken ct = default)
     {
+        // Müşteri sadece kendi şirketinin loglarını görür
+        if (!User.IsInRole("admin") && User.FindFirst("company_id")?.Value is string v)
+            targetCompanyId = long.Parse(v);
+
         var result = await repo.GetPagedAsync(
-            page, pageSize, siteMappingId, xmlSourceId, status, sortField, sortDir, ct);
+            page, pageSize, siteMappingId, xmlSourceId, targetCompanyId, status, sortField, sortDir, ct);
 
         return Ok(PagedResponse<TransferLogDto>.From(
             (result.Items.Select(TransferLogDto.From), result.TotalCount), page, pageSize));

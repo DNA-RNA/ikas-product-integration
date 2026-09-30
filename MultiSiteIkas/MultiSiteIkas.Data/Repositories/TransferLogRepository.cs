@@ -16,7 +16,8 @@ public sealed class TransferLogRepository(IDbConnectionFactory factory) : ITrans
 
     public async Task<(IEnumerable<TransferLog> Items, long TotalCount)> GetPagedAsync(
         int page, int pageSize, long? siteMappingId = null, long? xmlSourceId = null,
-        byte? status = null, string? sortField = null, string? sortDir = null, CancellationToken ct = default)
+        long? targetCompanyId = null, byte? status = null,
+        string? sortField = null, string? sortDir = null, CancellationToken ct = default)
     {
         if (page < 1) page = 1;
         if (pageSize <= 0) pageSize = 20;
@@ -35,15 +36,16 @@ public sealed class TransferLogRepository(IDbConnectionFactory factory) : ITrans
         string direction = sortDir?.ToLower() == "asc" ? "ASC" : "DESC";
 
         var where = "1=1";
-        if (siteMappingId.HasValue) where += " AND site_mapping_id = @siteMappingId";
-        if (xmlSourceId.HasValue)   where += " AND xml_source_id = @xmlSourceId";
-        if (status.HasValue)        where += " AND status = @status";
+        if (siteMappingId.HasValue)   where += " AND site_mapping_id = @siteMappingId";
+        if (xmlSourceId.HasValue)     where += " AND xml_source_id = @xmlSourceId";
+        if (targetCompanyId.HasValue) where += " AND target_company_id = @targetCompanyId";
+        if (status.HasValue)          where += " AND status = @status";
 
         using var conn = factory.CreateConnection();
         var multi = await conn.QueryMultipleAsync($"""
             SELECT COUNT(*) FROM transfer_logs WHERE {where};
             SELECT * FROM transfer_logs WHERE {where} ORDER BY {orderColumn} {direction} LIMIT @pageSize OFFSET @offset
-            """, new { siteMappingId, xmlSourceId, status, pageSize, offset });
+            """, new { siteMappingId, xmlSourceId, targetCompanyId, status, pageSize, offset });
 
         var total = await multi.ReadSingleAsync<long>();
         var items = (await multi.ReadAsync<TransferLog>()).ToList();

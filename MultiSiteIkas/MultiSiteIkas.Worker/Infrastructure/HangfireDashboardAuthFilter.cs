@@ -46,7 +46,7 @@ public class HangfireDashboardAuthFilter(IConfiguration config) : IDashboardAuth
 
     private static bool Challenge(HttpContext http)
     {
-        http.Response.Headers["WWW-Authenticate"] = "Basic realm=\"Hangfire — Developer Access\"";
+        http.Response.Headers["WWW-Authenticate"] = "Basic realm=\"Hangfire Dashboard\"";
         http.Response.StatusCode = 401;
         return false;
     }

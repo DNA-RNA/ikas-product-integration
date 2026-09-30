@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using MultiSiteIkas.API.Models.Requests;
 using MultiSiteIkas.API.Models.Responses;
@@ -8,6 +9,7 @@ namespace MultiSiteIkas.API.Controllers;
 
 [ApiController]
 [Route("api/companies")]
+[Authorize(Roles = "admin")]
 public class CompaniesController(ICompanyRepository repo) : ControllerBase
 {
     [HttpGet]
