@@ -50,6 +50,41 @@ public sealed class ProductTransferRepository : IProductTransferRepository
             new { siteMappingId });
     }
 
+    public async Task<(IEnumerable<ProductTransfer> Items, long TotalCount)> GetPagedAsync(
+        int page, int pageSize, long? targetCompanyId = null, long? siteMappingId = null,
+        byte? transferStatus = null, string? sortField = null, string? sortDir = null,
+        CancellationToken ct = default)
+    {
+        if (page < 1) page = 1;
+        if (pageSize <= 0) pageSize = 20;
+        var offset = (page - 1) * pageSize;
+
+        string orderColumn = sortField?.ToLower() switch
+        {
+            "lasttransferdate"  => "last_transfer_date",
+            "firsttransferdate" => "first_transfer_date",
+            "transferstatus"    => "transfer_status",
+            "transferredprice"  => "transferred_price",
+            _                   => "last_transfer_date"
+        };
+        string direction = sortDir?.ToLower() == "asc" ? "ASC" : "DESC";
+
+        var where = "1=1";
+        if (targetCompanyId.HasValue) where += " AND target_company_id = @targetCompanyId";
+        if (siteMappingId.HasValue)   where += " AND site_mapping_id = @siteMappingId";
+        if (transferStatus.HasValue)  where += " AND transfer_status = @transferStatus";
+
+        using var conn = _factory.CreateConnection();
+        var multi = await conn.QueryMultipleAsync($"""
+            SELECT COUNT(*) FROM product_transfers WHERE {where};
+            SELECT * FROM product_transfers WHERE {where} ORDER BY {orderColumn} {direction} LIMIT @pageSize OFFSET @offset
+            """, new { targetCompanyId, siteMappingId, transferStatus, pageSize, offset });
+
+        var total = await multi.ReadSingleAsync<long>();
+        var items = (await multi.ReadAsync<ProductTransfer>()).ToList();
+        return (items, total);
+    }
+
     public async Task<IEnumerable<ProductTransfer>> GetPendingAsync(CancellationToken ct = default)
     {
         using var conn = _factory.CreateConnection();

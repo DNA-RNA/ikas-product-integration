@@ -1,0 +1,54 @@
+services:
+
+  # ── PostgreSQL ────────────────────────────────────────────────────────────────
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: multisite_ikas
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"          # prod'da bu satırı kaldır veya 127.0.0.1 bind et
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d multisite_ikas"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── API: HTTP endpoint'ler, Swagger, enqueue ──────────────────────────────────
+  api:
+    build:
+      context: .
+      dockerfile: MultiSiteIkas.API/Dockerfile
+    restart: unless-stopped
+    ports:
+      - "5000:8080"
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      ConnectionStrings__DefaultConnection: "Host=db;Port=5432;Database=multisite_ikas;Username=${POSTGRES_USER};Password=${POSTGRES_PASSWORD}"
+    depends_on:
+      db:
+        condition: service_healthy
+
+  # ── Worker: Hangfire server + dashboard (sadece geliştiriciler) ───────────────
+  worker:
+    build:
+      context: .
+      dockerfile: MultiSiteIkas.Worker/Dockerfile
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:5100:8080"   # Dışarıya kapalı — sadece sunucu üzerinden erişilir
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      ConnectionStrings__DefaultConnection: "Host=db;Port=5432;Database=multisite_ikas;Username=${POSTGRES_USER};Password=${POSTGRES_PASSWORD}"
+      Hangfire__DashboardUser: ${HANGFIRE_DASHBOARD_USER}
+      Hangfire__DashboardPassword: ${HANGFIRE_DASHBOARD_PASSWORD}
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  pgdata:

@@ -1,9 +1,9 @@
-using System.Collections.Concurrent;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Microsoft.Extensions.Logging;
+using MultiSiteIkas.Core.Caching;
 using MultiSiteIkas.Core.Exceptions;
 using MultiSiteIkas.Core.Interfaces;
 
@@ -14,8 +14,6 @@ public sealed class IkasApiService : IIkasApiService
     private const string GraphqlEndpoint = "/api/v2/admin/graphql";
     private const string TokenEndpoint   = "/api/admin/oauth/token";
 
-    private static readonly ConcurrentDictionary<string, (string Token, DateTime ExpiresAt)> TokenCache = new();
-
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
@@ -23,11 +21,13 @@ public sealed class IkasApiService : IIkasApiService
     };
 
     private readonly HttpClient _http;
+    private readonly ICacheService _cache;
     private readonly ILogger<IkasApiService> _logger;
 
-    public IkasApiService(HttpClient http, ILogger<IkasApiService> logger)
+    public IkasApiService(HttpClient http, ICacheService cache, ILogger<IkasApiService> logger)
     {
         _http = http;
+        _cache = cache;
         _logger = logger;
     }
 
@@ -187,11 +187,12 @@ public sealed class IkasApiService : IIkasApiService
 
     private async Task<string> GetAccessTokenAsync(IkasCredentials creds, CancellationToken ct)
     {
-        if (TokenCache.TryGetValue(creds.ApiKey, out var cached) &&
-            cached.ExpiresAt > DateTime.UtcNow.AddMinutes(5))
-        {
-            return cached.Token;
-        }
+        // Cache key: mağazaya özel — birden fazla tedarikçi aynı mağazaya
+        // yazsa bile token bir kez alınır
+        var cacheKey = $"ikas:token:{creds.ApiKey}";
+
+        var cached = _cache.Get<string>(cacheKey);
+        if (cached is not null) return cached;
 
         var form = new FormUrlEncodedContent(new Dictionary<string, string>
         {
@@ -212,10 +213,14 @@ public sealed class IkasApiService : IIkasApiService
             .ReadFromJsonAsync<TokenResponse>(JsonOptions, ct)
             ?? throw new IkasApiException(creds.StoreCode, tokenResponse.StatusCode, "Boş token yanıtı");
 
-        var expiresAt = DateTime.UtcNow.AddSeconds(tokenResult.ExpiresIn);
-        TokenCache[creds.ApiKey] = (tokenResult.AccessToken, expiresAt);
+        // Token 60 dk geçerli; 5 dk erken expire ediyoruz — süresi dolmak üzere
+        // token ile API call yapmamak için
+        var ttl = TimeSpan.FromSeconds(Math.Max(tokenResult.ExpiresIn - 300, 60));
+        _cache.Set(cacheKey, tokenResult.AccessToken, ttl);
 
-        _logger.LogInformation("[{Store}] Access token alındı, geçerlilik: {ExpiresAt:HH:mm:ss} UTC", creds.StoreCode, expiresAt);
+        _logger.LogInformation("[{Store}] Token alındı, {TTL} dk cache'lendi",
+            creds.StoreCode, (int)ttl.TotalMinutes);
+
         return tokenResult.AccessToken;
     }
 

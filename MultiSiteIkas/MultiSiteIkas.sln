@@ -13,6 +13,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MultiSiteIkas.Jobs", "Multi
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MultiSiteIkas.Tests", "MultiSiteIkas.Tests\MultiSiteIkas.Tests.csproj", "{BE112B65-E5DA-4AA8-910D-9368567521EB}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MultiSiteIkas.Worker", "MultiSiteIkas.Worker\MultiSiteIkas.Worker.csproj", "{98CAEF87-2AA4-4961-8C2B-0BAB81B303E9}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -42,5 +44,9 @@ Global
 		{BE112B65-E5DA-4AA8-910D-9368567521EB}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{BE112B65-E5DA-4AA8-910D-9368567521EB}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{BE112B65-E5DA-4AA8-910D-9368567521EB}.Release|Any CPU.Build.0 = Release|Any CPU
+		{98CAEF87-2AA4-4961-8C2B-0BAB81B303E9}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{98CAEF87-2AA4-4961-8C2B-0BAB81B303E9}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{98CAEF87-2AA4-4961-8C2B-0BAB81B303E9}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{98CAEF87-2AA4-4961-8C2B-0BAB81B303E9}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 EndGlobal

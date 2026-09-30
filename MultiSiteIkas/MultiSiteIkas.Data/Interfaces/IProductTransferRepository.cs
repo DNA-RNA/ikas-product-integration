@@ -12,6 +12,10 @@ public interface IProductTransferRepository
     Task<IEnumerable<ProductTransfer>> GetBySourceProductIdAsync(long sourceProductId, CancellationToken ct = default);
     Task<IEnumerable<ProductTransfer>> GetByTargetCompanyIdAsync(long targetCompanyId, CancellationToken ct = default);
     Task<IEnumerable<ProductTransfer>> GetBySiteMappingIdAsync(long siteMappingId, CancellationToken ct = default);
+    Task<(IEnumerable<ProductTransfer> Items, long TotalCount)> GetPagedAsync(
+        int page, int pageSize, long? targetCompanyId = null, long? siteMappingId = null,
+        byte? transferStatus = null, string? sortField = null, string? sortDir = null,
+        CancellationToken ct = default);
     Task<IEnumerable<ProductTransfer>> GetPendingAsync(CancellationToken ct = default);
     Task<IEnumerable<ProductTransfer>> GetFailedAsync(CancellationToken ct = default);
     Task<long> CreateAsync(ProductTransfer transfer, CancellationToken ct = default);

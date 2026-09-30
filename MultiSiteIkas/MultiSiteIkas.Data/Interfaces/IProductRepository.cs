@@ -13,7 +13,11 @@ public interface IProductRepository
     Task<IEnumerable<Product>> GetByXmlSourceIdAsync(long xmlSourceId, CancellationToken ct = default);
     Task<IEnumerable<Product>> GetByCategoryAsync(string categoryPath, CancellationToken ct = default);
     Task<IEnumerable<Product>> GetActiveAsync(CancellationToken ct = default);
-    
+    Task<(IEnumerable<Product> Items, long TotalCount)> GetPagedAsync(
+        int page, int pageSize, long? xmlSourceId = null, long? companyId = null,
+        string? search = null, bool? isActive = null,
+        string? sortField = null, string? sortDir = null, CancellationToken ct = default);
+
     /// <summary>
     /// SKU bazlı upsert: var ise update, yoksa insert
     /// </summary>
